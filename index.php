@@ -305,7 +305,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
         <?php if (empty($_SESSION["chat"])): ?>
             <div class="center-page">
                 <div class="search-box">
-                    <div class="intro">Olá Alexandre, no que devemos nos aprofundar hoje?</div>
+                    <div class="intro">Olá! No que podemos nos aprofundar sobre a família Furtado hoje?</div>
                     <form method="post">
                         <input type="text" name="mensagem" placeholder="Digite sua pergunta..." required />
                         <br>
