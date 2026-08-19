@@ -6,7 +6,8 @@ session_start();
 require_once 'db.php';
 require_once 'consultas.php';
 require_once 'intencao.php';
-require_once 'ia.php'; // aqui já está a função chamarGroq()
+require_once 'ia.php';
+require_once 'livros.php';
 
 if (isset($_GET["novo"])) unset($_SESSION["chat"]);
 if (isset($_GET["limpar"])) $_SESSION["chat"] = [];
@@ -16,6 +17,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     $intencao = detectarIntencao($mensagem);
     $contexto = "";
 
+    // 1. Busca no banco genealógico (quando a intenção for genealógica)
     if ($intencao === "genealogia") {
         $service = new SearchServiceDB($conn);
         $result = $service->search($mensagem, "indi");
@@ -51,14 +53,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
                 $arvore[] = $linha;
             }
 
-            $contexto = "Dados genealógicos encontrados:\n" . implode("\n", $arvore);
+            $contexto .= "Dados genealógicos encontrados:\n" . implode("\n", $arvore) . "\n\n";
         } else {
-            $contexto = "Não encontrei registros genealógicos para essa busca.";
+            $contexto .= "Não encontrei registros genealógicos estruturados para essa busca.\n\n";
         }
     }
 
-    $entrada = $mensagem . (!empty($contexto) ? "\n\n" . $contexto : "");
-    $resposta = chamarGroq($entrada);
+    // 2. Sempre tenta enriquecer com trechos dos livros familiares
+    $livros = new LivrosFamiliares();
+    $trechos = $livros->buscarTrechos($mensagem, 5, 550);
+    if (!empty($trechos)) {
+        $contexto .= $trechos;
+    }
+
+    // 3. Chama a Groq com histórico + contexto enriquecido
+    $historico = $_SESSION["chat"] ?? [];
+    $resposta = chamarGroq($mensagem, $contexto, $historico);
 
     if (!isset($_SESSION["chat"])) $_SESSION["chat"] = [];
     $_SESSION["chat"][] = ["user" => $mensagem, "ia" => $resposta];
