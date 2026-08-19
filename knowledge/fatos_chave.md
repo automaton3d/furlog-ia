@@ -1,35 +1,36 @@
-# Fatos-chave do clã Furtado (extraídos dos livros)
+# Fatos-chave do clã Furtado (use estas informações com prioridade)
 
 ## Mariana dos Anjos Lima Furtado
 - Nasceu em 02/08/1927, em Colares, Pará.
-- Filha de Clementina (Quelé) e João Lima (família Lima).
-- Viveu em Colares até 1945, depois mudou-se para Icoaraci (Belém).
-- Casou-se com Raimundo Pio Furtado em 20/04/1950, em Icoaraci (padre Estanislaw).
-- Passou a se chamar Mariana dos Anjos Lima Furtado.
-- Tiveram treze filhos (5 homens e 8 mulheres).
+- Filha de Clementina (Quelé) e João Lima.
+- Viveu em Colares até 1945; depois mudou-se para Icoaraci (Belém).
+- Casou-se com Raimundo Pio Furtado em 20/04/1950, em Icoaraci.
+- Tiveram **treze filhos** (5 homens e 8 mulheres).
 - Faleceu em 31/08/1975, às 21h, em Icoaraci, aos 48 anos.
 - Não chegou a conhecer nenhum neto.
-- Era conhecida pela firmeza de caráter, trabalho (costura, bordado, cuidados da casa), fé e dedicação à família.
-- Fonte principal: Memorial de Mariana + Furtadês.
 
 ## Raimundo Pio Furtado
 - Esposo de Mariana.
+- Pai dos treze filhos do casal.
 - Nasceu em Maracanã, Pará.
 - Filho de Alexandre (Xandico) e Filica.
-- Casou-se com Mariana em 20/04/1950.
-- Fonte: Memorial de Mariana, Furtadês.
 
-## José Maria Furtado (J.M. Furtado / Tio Zeca)
+## Relação Carminha ↔ Mariana
+- **Carminha Furtado é filha de Mariana e de Pio Furtado.**
+- É uma das treze filhas do casal.
+- Autora do livro "O Efeito Pipoca – Quando a dor nos ensina".
+- Colaborou no livro "Furtadês".
+
+## Relação Dyleli ↔ Mariana
+- **Dyleli Furtado é filha de Mariana e de Pio Furtado.**
+- Autora principal do livro "Furtadês".
+
+## José Maria Furtado (Tio Zeca / J.M. Furtado)
+- Irmão de Pio Furtado.
+- Tio de Carminha e Dyleli.
 - Autor de "Cenas de minha infância".
-- Engenheiro civil, nascido e criado na Vila do Pinheiro (Icoaraci).
-- Irmão de Pio e outros; tio de Carminha, Dyleli etc.
-- Registrou costumes da década de 1940 e memórias de infância da família.
+- Engenheiro civil, criado na Vila do Pinheiro (Icoaraci).
 
-## Carminha Furtado
-- Autora de "O Efeito Pipoca – Quando a dor nos ensina".
-- Colaboradora de "Furtadês".
-- Filha de Pio e Mariana (uma das treze).
-
-## Dyleli Furtado
-- Autora principal de "Furtadês".
-- Filha de Pio e Mariana.
+## Resumo rápido de parentesco
+- Mariana + Pio = pais de Carminha, Dyleli e mais 11 filhos.
+- Tio Zeca = irmão de Pio = tio de Carminha e Dyleli.

@@ -35,6 +35,7 @@ Livros de referência do clã:
 - "O Efeito Pipoca – Quando a dor nos ensina" – Carminha Furtado
 
 Você NÃO é uma IA genérica. Você é o historiador deste clã específico.
+Quando o contexto trouxer a seção "Fatos-chave", use-a com prioridade máxima para responder perguntas de parentesco.
 PROMPT;
 
     $messages = [
