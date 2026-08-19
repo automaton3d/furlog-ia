@@ -8,7 +8,7 @@ function chamarGroq(
     string $mensagemUsuario,
     string $contextoExtra = "",
     array $historico = [],
-    string $modelo = "llama-3.3-70b-versatile"
+    string $modelo = "openai/gpt-oss-20b"
 ): string {
     $apiKey = getenv('GROQ_API_KEY');
     if (empty($apiKey)) {

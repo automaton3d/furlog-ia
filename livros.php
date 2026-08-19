@@ -1,99 +1,131 @@
 <?php
 /**
- * Recuperação de trechos dos livros familiares do clã Furtado
- *
- * Livros:
- *  1. Cenas de minha infância – J.M. Furtado (Tio Zeca)
- *  2. Furtadês – Dyleli Furtado (colab. Carminha)
- *  3. Memorial de Mariana – (filha de Mariana e Pio)
- *  4. O Efeito Pipoca – Quando a dor nos ensina – Carminha Furtado
+ * Recuperação por parágrafos dos livros familiares do clã Furtado
  */
 
 class LivrosFamiliares
 {
-    private array $textos = [];
+    private array $paragrafos = []; // [ ['arquivo'=>, 'texto'=>, 'lower'=>], ... ]
     private string $dir;
 
     public function __construct(string $dir = __DIR__ . '/knowledge')
     {
         $this->dir = $dir;
-        $this->carregarTextos();
+        $this->carregarEDividir();
     }
 
-    private function carregarTextos(): void
+    private function carregarEDividir(): void
     {
         $arquivos = glob($this->dir . '/livro*.txt');
         sort($arquivos);
+
         foreach ($arquivos as $arq) {
             $conteudo = file_get_contents($arq);
-            if ($conteudo !== false) {
-                $conteudo = str_replace("\x0C", "\n", $conteudo);
-                $this->textos[basename($arq)] = $conteudo;
+            if ($conteudo === false) continue;
+            $conteudo = str_replace("\x0C", "\n", $conteudo);
+            $nome = basename($arq);
+
+            // Divide em blocos por linhas em branco ou form feeds
+            $blocos = preg_split('/\n\s*\n/', $conteudo);
+            foreach ($blocos as $bloco) {
+                $bloco = trim(preg_replace('/[ \t]+/', ' ', $bloco));
+                $bloco = preg_replace('/\n{2,}/', "\n", $bloco);
+                // Remove números de página isolados
+                $bloco = preg_replace('/^\d+\s*$/m', '', $bloco);
+                $bloco = trim($bloco);
+
+                if (strlen($bloco) < 120) continue; // ignora blocos muito curtos
+                if ($this->pareceLixo($bloco)) continue;
+
+                $this->paragrafos[] = [
+                    'arquivo' => $nome,
+                    'texto'   => $bloco,
+                    'lower'   => strtolower($bloco),
+                ];
             }
         }
     }
 
-    private function lower(string $s): string
+    private function pareceLixo(string $t): bool
     {
-        return strtolower($s); // suficiente para busca (português sem acento crítico na maioria dos nomes)
+        $lower = strtolower($t);
+        // Sumários e listas de capítulos
+        if (substr_count($t, "\n") > 12 && strlen($t) / (substr_count($t, "\n") + 1) < 35) {
+            return true;
+        }
+        $lixo = ['sumário', 'sumario', 'dedicatória', 'agradecimentos', 'participação especial',
+                 'outras participações', 'homenagem especial', 'índice'];
+        foreach ($lixo as $p) {
+            if (strpos($lower, $p) !== false && substr_count($t, "\n") > 6) return true;
+        }
+        return false;
     }
 
     private function extrairTermos(string $query): array
     {
-        $query = $this->lower(trim($query));
-        $stop = [
-            'quem', 'foi', 'era', 'sobre', 'me', 'fale', 'diga', 'qual', 'relação', 'relacao',
-            'de', 'da', 'do', 'das', 'dos', 'a', 'o', 'os', 'as', 'e', 'ou', 'em',
-            'para', 'com', 'por', 'que', 'se', 'um', 'uma', 'nos', 'nas', 'ao', 'à',
-            'como', 'onde', 'quando', 'história', 'historia', 'conte', 'falar', 'sobre'
-        ];
+        $query = strtolower(trim($query));
+        $stop = ['quem','foi','era','é','e','sobre','me','fale','diga','qual','relação','relacao',
+                 'de','da','do','das','dos','a','o','os','as','ou','em','para','com','por','que',
+                 'se','um','uma','nos','nas','ao','à','como','onde','quando','história','historia',
+                 'conte','falar'];
         $termos = preg_split('/[\s,;:.!?"\'\(\)\[\]\/]+/u', $query, -1, PREG_SPLIT_NO_EMPTY);
-        $termos = array_filter($termos, function ($t) use ($stop) {
-            return strlen($t) > 2 && !in_array($t, $stop, true);
-        });
+        $termos = array_filter($termos, fn($t) => strlen($t) > 2 && !in_array($t, $stop, true));
         return array_values(array_unique($termos));
     }
 
-    public function buscarTrechos(string $query, int $maxTrechos = 5, int $janela = 550): string
+    public function buscarTrechos(string $query, int $maxTrechos = 4, int $janela = 0): string
     {
         $termos = $this->extrairTermos($query);
-        if (empty($termos)) {
+        if (empty($termos) || empty($this->paragrafos)) {
             return "";
         }
 
         $candidatos = [];
-
-        foreach ($this->textos as $arquivo => $texto) {
-            $textoLower = $this->lower($texto);
+        foreach ($this->paragrafos as $p) {
+            $score = 0.0;
+            $hits = 0;
             foreach ($termos as $termo) {
-                $pos = 0;
-                $ocorrencias = 0;
-                while (($pos = strpos($textoLower, $termo, $pos)) !== false && $ocorrencias < 8) {
-                    $inicio = max(0, $pos - $janela);
-                    $trecho = substr($texto, $inicio, $janela * 2);
-                    $trecho = $this->limparTrecho($trecho);
-                    $score = $this->calcularScore($trecho, $termos);
-                    $candidatos[] = [
-                        'arquivo' => $arquivo,
-                        'trecho'  => $trecho,
-                        'score'   => $score
-                    ];
-                    $pos += strlen($termo);
-                    $ocorrencias++;
+                $c = substr_count($p['lower'], $termo);
+                if ($c > 0) {
+                    $hits++;
+                    $score += $c * (strlen($termo) > 5 ? 4.0 : 2.0);
                 }
             }
+            if ($hits === 0) continue;
+
+            // Bônus forte se contém várias palavras da query
+            $score += $hits * 3.0;
+
+            // Bônus por conteúdo biográfico
+            foreach (['nasceu', 'faleceu', 'casou', 'filha', 'filho', 'mãe', 'mae', 'pai',
+                      'esposa', 'esposo', 'morreu', 'viveu', 'chamava', 'chamado'] as $b) {
+                if (strpos($p['lower'], $b) !== false) $score += 5.0;
+            }
+
+            // Bônus por tamanho razoável (prosa)
+            $len = strlen($p['texto']);
+            if ($len > 250 && $len < 2500) $score += 4.0;
+            if ($len > 500) $score += 3.0;
+
+            // Penaliza poesia/música (muitas aspas e reticências)
+            if (substr_count($p['texto'], '...') > 3) $score *= 0.4;
+            if (substr_count($p['texto'], '"') > 6) $score *= 0.5;
+
+            $candidatos[] = [
+                'arquivo' => $p['arquivo'],
+                'trecho'  => $p['texto'],
+                'score'   => $score,
+            ];
         }
 
-        if (empty($candidatos)) {
-            return "";
-        }
+        if (empty($candidatos)) return "";
 
         usort($candidatos, fn($a, $b) => $b['score'] <=> $a['score']);
 
         $selecionados = [];
         $vistos = [];
         foreach ($candidatos as $c) {
-            $hash = md5(substr(preg_replace('/\s+/', ' ', $c['trecho']), 0, 150));
+            $hash = md5(substr($c['trecho'], 0, 160));
             if (isset($vistos[$hash])) continue;
             $vistos[$hash] = true;
             $selecionados[] = $c;
@@ -116,37 +148,16 @@ class LivrosFamiliares
         return $saida;
     }
 
-    private function limparTrecho(string $t): string
-    {
-        $t = preg_replace('/[ \t]+/', ' ', $t);
-        $t = preg_replace('/\n{3,}/', "\n\n", $t);
-        $t = preg_replace('/^\s*\d+\s*$/m', '', $t);
-        return trim($t);
-    }
-
-    private function calcularScore(string $trecho, array $termos): float
-    {
-        $lower = $this->lower($trecho);
-        $score = 0.0;
-        foreach ($termos as $termo) {
-            $count = substr_count($lower, $termo);
-            $peso = strlen($termo) > 5 ? 2.5 : 1.2;
-            $score += $count * $peso;
-        }
-        return $score;
-    }
-
     public function resumoGeral(): string
     {
         $path = $this->dir . '/resumo_familia.md';
-        if (file_exists($path)) {
-            return file_get_contents($path);
-        }
-        return "Quatro livros familiares do clã Furtado de Icoaraci/Belém.";
+        return file_exists($path) ? file_get_contents($path) : "Livros do clã Furtado.";
     }
 
     public function listarLivros(): array
     {
-        return array_keys($this->textos);
+        $arqs = [];
+        foreach ($this->paragrafos as $p) $arqs[$p['arquivo']] = true;
+        return array_keys($arqs);
     }
 }

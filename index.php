@@ -59,9 +59,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
         }
     }
 
-    // 2. Sempre tenta enriquecer com trechos dos livros familiares
+    // 2. Fatos-chave + trechos dos livros
     $livros = new LivrosFamiliares();
-    $trechos = $livros->buscarTrechos($mensagem, 5, 550);
+    $fatosPath = __DIR__ . "/knowledge/fatos_chave.md";
+    if (file_exists($fatosPath)) {
+        $fatos = file_get_contents($fatosPath);
+        // Só inclui se a pergunta mencionar nomes da família
+        $msgLower = strtolower($mensagem);
+        $nomesChave = ["mariana", "pio", "zeca", "furtado", "carminha", "dyleli", "j.m", "tio zeca"];
+        foreach ($nomesChave as $n) {
+            if (strpos($msgLower, $n) !== false) {
+                $contexto .= "Fatos-chave da família (use como base):
+" . $fatos . "
+
+";
+                break;
+            }
+        }
+    }
+    $trechos = $livros->buscarTrechos($mensagem, 4);
     if (!empty($trechos)) {
         $contexto .= $trechos;
     }
