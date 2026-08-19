@@ -1,38 +1,44 @@
 <?php
 function detectarIntencao($mensagem) {
-    // Normaliza para minúsculas
     $mensagem = strtolower(trim($mensagem));
 
-    // Perguntas genealógicas típicas
-    if (preg_match('/^quem (foi|era)/', $mensagem)) {
-        return "genealogia";
+    // Padrões fortes de genealogia
+    $padroes = [
+        '/^quem (foi|era|é|e)/',
+        '/^me fale sobre/',
+        '/^fale (sobre|de)/',
+        '/^conte (sobre|a história|a historia)/',
+        '/descendentes? de/',
+        '/ascendentes? de/',
+        '/qual a (relação|relacao|parentesco)/',
+        '/filhos? de/',
+        '/pais de/',
+        '/mãe de|mae de/',
+        '/pai de/',
+        '/irmão|irmao|irmã|irma/',
+        '/tio |tia /',
+        '/avô|avo |avó|ava /',
+        '/família|familia/',
+        '/árvore|arvore/',
+        '/genealogia/',
+        '/parentesco/',
+        '/memorial/',
+        '/história de|historia de/',
+    ];
+
+    foreach ($padroes as $p) {
+        if (preg_match($p, $mensagem)) {
+            return "genealogia";
+        }
     }
 
-    if (preg_match('/^me fale sobre/', $mensagem)) {
-        return "genealogia";
+    // Nomes muito comuns do clã → trata como genealogia
+    $nomes = ['furtado', 'mariana', 'pio', 'zeca', 'carminha', 'dyleli', 'j.m.', 'jm furtado', 'tio zeca'];
+    foreach ($nomes as $n) {
+        if (strpos($mensagem, $n) !== false) {
+            return "genealogia";
+        }
     }
 
-    if (preg_match('/^descendentes de/', $mensagem)) {
-        return "genealogia";
-    }
-
-    if (preg_match('/^ascendentes de/', $mensagem)) {
-        return "genealogia";
-    }
-
-    if (preg_match('/^qual a relação de/', $mensagem)) {
-        return "genealogia";
-    }
-
-    // Palavras-chave relacionadas
-    if (strpos($mensagem, "família") !== false ||
-        strpos($mensagem, "árvore") !== false ||
-        strpos($mensagem, "genealogia") !== false ||
-        strpos($mensagem, "parentesco") !== false) {
-        return "genealogia";
-    }
-
-    // Caso contrário, intenção geral
     return "geral";
 }
-?>

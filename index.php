@@ -70,6 +70,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     $historico = $_SESSION["chat"] ?? [];
     $resposta = chamarGroq($mensagem, $contexto, $historico);
 
+    // Modo debug: acrescente ?debug=1 na URL para ver o contexto enviado
+    if (isset($_GET["debug"])) {
+        $resposta = "=== DEBUG – Contexto enviado à Groq ===\n\n" 
+                  . (empty(trim($contexto)) ? "(vazio)" : $contexto)
+                  . "\n\n=== Resposta da IA ===\n\n" . $resposta;
+    }
+
     if (!isset($_SESSION["chat"])) $_SESSION["chat"] = [];
     $_SESSION["chat"][] = ["user" => $mensagem, "ia" => $resposta];
 }

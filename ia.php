@@ -1,9 +1,7 @@
 <?php
 /**
- * Integração com a API Groq – versão melhorada
- * - System prompt especializado no clã Furtado
- * - Histórico de conversa
- * - Contexto de livros + banco genealógico
+ * Integração com a API Groq – versão reforçada
+ * Força o uso do contexto dos livros e do banco genealógico
  */
 
 function chamarGroq(
@@ -14,37 +12,37 @@ function chamarGroq(
 ): string {
     $apiKey = getenv('GROQ_API_KEY');
     if (empty($apiKey)) {
-        return "Erro: GROQ_API_KEY não configurada no ambiente.";
+        return "Erro: GROQ_API_KEY não configurada no ambiente. Defina a variável de ambiente GROQ_API_KEY.";
     }
 
     $url = "https://api.groq.com/openai/v1/chat/completions";
 
     $systemPrompt = <<<PROMPT
-Você é o assistente genealógico e historiador do clã **Furtado** (também chamado "Furtadês"), da região de Icoaraci / Belém do Pará.
+Você é o assistente oficial de genealogia e memória do clã FURTADO (também chamado FURTADÊS), de Icoaraci / Belém do Pará.
 
-Seu papel:
-- Responder perguntas sobre parentesco, indivíduos, famílias e histórias do clã.
-- Combinar dados estruturados do banco genealógico com os relatos vivos dos quatro livros familiares.
-- Ser preciso, caloroso e respeitoso com a memória da família.
-- Quando usar informações dos livros, mencionar a fonte de forma natural (ex: "Segundo as memórias de J.M. Furtado...", "No livro Furtadês, Dyleli conta que...").
-- Quando a informação vier do banco de dados, pode ser mais objetiva.
-- Se não souber ou não houver registro, diga claramente.
-- Responda sempre em português brasileiro, de forma clara e bem estruturada.
-- Evite inventar fatos. Prefira dizer "não encontrei registro" a especular.
+REGRAS OBRIGATÓRIAS:
+1. Você SÓ pode usar informações que aparecem no CONTEXTO fornecido abaixo (dados do banco genealógico + trechos dos livros familiares).
+2. NÃO invente biografias, datas ou parentescos. Se a informação não estiver no contexto, diga claramente: "Não encontrei essa informação nos registros e livros disponíveis."
+3. Quando usar trechos dos livros, cite a fonte de forma natural (ex: "Segundo J.M. Furtado em 'Cenas de minha infância'...", "No livro Furtadês, Dyleli relata que...", "No memorial de Mariana...").
+4. Responda sempre em português brasileiro, de forma clara, calorosa e respeitosa com a memória da família.
+5. Organize a resposta de forma legível (parágrafos curtos ou tópicos quando fizer sentido).
+6. Se o contexto trouxer informações contraditórias ou incompletas, mencione isso.
 
-Livros de referência disponíveis:
-1. "Cenas de minha infância" – J.M. Furtado (Tio Zeca)
-2. "Furtadês" – Dyleli Furtado (colaboração Carminha Furtado)
-3. Memorial de Mariana (esposa de Pio Furtado)
-4. "O Efeito Pipoca – Quando a dor nos ensina" – Carminha Furtado
+Livros de referência do clã:
+- "Cenas de minha infância" – José Maria Furtado (Tio Zeca)
+- "Furtadês" – Dyleli Furtado (colaboração Carminha Furtado)
+- Memorial de Mariana (esposa de Pio Furtado)
+- "O Efeito Pipoca – Quando a dor nos ensina" – Carminha Furtado
+
+Você NÃO é uma IA genérica. Você é o historiador deste clã específico.
 PROMPT;
 
     $messages = [
         ["role" => "system", "content" => $systemPrompt]
     ];
 
-    // Adiciona histórico (últimas 6 interações para não estourar contexto)
-    $historicoRecente = array_slice($historico, -6);
+    // Histórico recente (máx. 4 turnos para não diluir o contexto)
+    $historicoRecente = array_slice($historico, -4);
     foreach ($historicoRecente as $item) {
         if (!empty($item['user'])) {
             $messages[] = ["role" => "user", "content" => $item['user']];
@@ -54,10 +52,16 @@ PROMPT;
         }
     }
 
-    // Mensagem atual + contexto
-    $conteudoUsuario = $mensagemUsuario;
-    if (!empty($contextoExtra)) {
-        $conteudoUsuario .= "\n\n---\nContexto adicional para esta pergunta:\n" . $contextoExtra;
+    // Mensagem do usuário + contexto em evidência
+    $conteudoUsuario = "PERGUNTA DO USUÁRIO:\n" . $mensagemUsuario;
+
+    if (!empty(trim($contextoExtra))) {
+        $conteudoUsuario .= "\n\n========== CONTEXTO OBRIGATÓRIO (use somente estas informações) ==========\n";
+        $conteudoUsuario .= $contextoExtra;
+        $conteudoUsuario .= "\n========== FIM DO CONTEXTO ==========\n";
+        $conteudoUsuario .= "\nResponda a pergunta usando EXCLUSIVAMENTE o contexto acima. Se a informação não estiver lá, diga que não encontrou.";
+    } else {
+        $conteudoUsuario .= "\n\n(Nenhum contexto adicional foi encontrado nos livros ou no banco genealógico para esta pergunta.)";
     }
 
     $messages[] = ["role" => "user", "content" => $conteudoUsuario];
@@ -65,9 +69,9 @@ PROMPT;
     $data = [
         "model" => $modelo,
         "messages" => $messages,
-        "temperature" => 0.4,
-        "max_tokens" => 2048,
-        "top_p" => 0.9,
+        "temperature" => 0.25,   // mais determinístico
+        "max_tokens" => 1800,
+        "top_p" => 0.85,
     ];
 
     $ch = curl_init($url);
@@ -94,8 +98,7 @@ PROMPT;
     $json = json_decode($result, true);
 
     if ($httpCode !== 200) {
-        $msg = $json['error']['message'] ?? $result;
-        // Log simples
+        $msg = $json['error']['message'] ?? substr($result, 0, 500);
         file_put_contents(__DIR__ . '/groq_log.txt', date('c') . " HTTP $httpCode: $msg\n", FILE_APPEND);
         return "Erro na API Groq (HTTP $httpCode): " . $msg;
     }
