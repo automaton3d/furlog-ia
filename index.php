@@ -20,42 +20,60 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     // 1. Busca no banco genealógico (quando a intenção for genealógica)
     if ($intencao === "genealogia") {
         $service = new SearchServiceDB($conn);
-        $result = $service->search($mensagem, "indi");
 
-        if ($result && $result['count'] > 0) {
-            $pid = $result['results'][0]["id"];
-            $indi = $service->getIndividual($pid);
+        // Extrai possíveis nomes da pergunta (não usa a frase inteira)
+        $nomesParaBuscar = extrairNomesParaBusca($mensagem);
 
-            $arvore = [];
-            foreach ($indi['families'] as $fam) {
-                $linha = "Família {$fam['f_id']} | Pai: {$fam['husb_name']} | Mãe: {$fam['wife_name']}";
-                if (!empty($fam['children'])) {
-                    $linha .= "\n  Filhos (via pgv_link):";
-                    foreach ($fam['children'] as $c) {
-                        $linha .= "\n    - {$c['id']} | {$c['nome']}";
+        $achouAlgo = false;
+        $arvoreGeral = [];
+
+        foreach ($nomesParaBuscar as $nomeBusca) {
+            $result = $service->search($nomeBusca, "indi", 5);
+            if (!$result || $result['count'] === 0) continue;
+
+            $achouAlgo = true;
+            // Pega até os 2 melhores resultados para este nome
+            foreach (array_slice($result['results'], 0, 2) as $hit) {
+                $pid = $hit["id"];
+                $indi = $service->getIndividual($pid);
+                if (!$indi) continue;
+
+                $bloco = "Indivíduo: {$indi['nome']} (ID {$indi['id']})\n";
+                foreach ($indi['families'] as $fam) {
+                    $linha = "  Família {$fam['f_id']} | Pai: " . ($fam['husb_name'] ?? '?') . " | Mãe: " . ($fam['wife_name'] ?? '?');
+                    $filhosList = [];
+                    if (!empty($fam['children'])) {
+                        foreach ($fam['children'] as $c) {
+                            $filhosList[] = ($c['nome'] ?? $c['id']);
+                        }
                     }
-                }
-                if (!empty($fam['f_chil'])) {
-                    $ids = explode(';', trim($fam['f_chil'], ';'));
-                    if (!empty($ids)) {
-                        $linha .= "\n  Filhos (via f_chil):";
+                    if (!empty($fam['f_chil'])) {
+                        $ids = explode(';', trim($fam['f_chil'], ';'));
                         foreach ($ids as $cid) {
+                            if ($cid === '') continue;
                             $stmt = $conn->prepare("SELECT n_full FROM pgv_name WHERE n_id = ?");
                             $stmt->bind_param("s", $cid);
                             $stmt->execute();
                             $res = $stmt->get_result();
                             $row = $res->fetch_assoc();
-                            $nome = $row ? $row['n_full'] : "(sem nome)";
-                            $linha .= "\n    - {$cid} | {$nome}";
+                            $filhosList[] = $row ? $row['n_full'] : $cid;
                         }
                     }
+                    if ($filhosList) {
+                        // remove duplicatas preservando ordem
+                        $filhosList = array_values(array_unique($filhosList));
+                        $linha .= "\n  Filhos (" . count($filhosList) . "): " . implode("; ", $filhosList);
+                    }
+                    $bloco .= $linha . "\n";
                 }
-                $arvore[] = $linha;
+                $arvoreGeral[] = $bloco;
             }
+        }
 
-            $contexto .= "Dados genealógicos encontrados:\n" . implode("\n", $arvore) . "\n\n";
+        if ($achouAlgo) {
+            $contexto .= "Dados genealógicos do banco:\n" . implode("\n", $arvoreGeral) . "\n";
         } else {
-            $contexto .= "Não encontrei registros genealógicos estruturados para essa busca.\n\n";
+            $contexto .= "Não encontrei registros genealógicos estruturados no banco para os nomes identificados.\n\n";
         }
     }
 
