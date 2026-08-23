@@ -14,12 +14,7 @@ if (isset($_GET["limpar"])) $_SESSION["chat"] = [];
 
 if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     $mensagem = trim($_POST["mensagem"]);
-
-    // Log apenas das perguntas do usuário (uma linha por pergunta)
-    $logLine = date('Y-m-d H:i:s') . " | " . str_replace(["\r", "\n"], " ", $mensagem) . "\n";
-    if (@file_put_contents(__DIR__ . '/perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX) === false) {
-        @file_put_contents('/tmp/furtades_perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX);
-    }
+    $turn_id = uniqid('turn_', true); // ID único para esta interação
 
     $intencao = detectarIntencao($mensagem);
     $perguntaParentesco = function_exists('ehPerguntaParentescoEstruturada')
@@ -28,11 +23,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     $contexto = "";
     $achouNoBanco = false;
 
-    // 1. Busca no banco genealógico (genealogia OU pergunta estruturada de parentesco)
+    // 1. Busca no banco genealógico
     if ($intencao === "genealogia" || $perguntaParentesco) {
         $service = new SearchServiceDB($conn);
-
-        // Extrai possíveis nomes da pergunta (prioriza "filhos de X" → X completo)
         $nomesParaBuscar = extrairNomesParaBusca($mensagem);
 
         $arvoreGeral = [];
@@ -51,9 +44,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
             foreach (array_slice($result['results'], 0, $limiteHits) as $hit) {
                 $pid = $hit["id"];
                 if (isset($idsJaIncluidos[$pid])) continue;
-                if ($perguntaParentesco && isset($hit['score']) && (float)$hit['score'] < 0.45) {
-                    continue;
-                }
+                if ($perguntaParentesco && isset($hit['score']) && (float)$hit['score'] < 0.45) continue;
                 $idsJaIncluidos[$pid] = true;
 
                 $indi = $service->getIndividual($pid);
@@ -61,7 +52,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
 
                 $bloco = "Indivíduo: {$indi['nome']}\n";
                 $filhosDesteIndi = 0;
-                $filhosIds = []; // id => nome
+                $filhosIds = [];
 
                 foreach ($indi['families'] as $fam) {
                     $linha = "  Família | Pai: " . ($fam['husb_name'] ?? '?') . " | Mãe: " . ($fam['wife_name'] ?? '?');
@@ -71,9 +62,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
                             $cid = $c['id'] ?? null;
                             $cnome = $c['nome'] ?? $cid;
                             $filhosList[] = $cnome;
-                            if ($cid) {
-                                $filhosIds[$cid] = $cnome;
-                            }
+                            if ($cid) $filhosIds[$cid] = $cnome;
                         }
                     }
                     if (!empty($fam['f_chil'])) {
@@ -99,7 +88,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
                     $bloco .= $linha . "\n";
                 }
 
-                // Netos: uma geração abaixo dos filhos
                 if ($perguntaNetos && !empty($filhosIds)) {
                     $netosLista = [];
                     foreach ($filhosIds as $filhoId => $filhoNome) {
@@ -108,9 +96,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
                         $netosDesteFilho = [];
                         foreach ($filhoIndi['families'] as $famF) {
                             if (!empty($famF['children'])) {
-                                foreach ($famF['children'] as $c) {
-                                    $netosDesteFilho[] = $c['nome'] ?? $c['id'];
-                                }
+                                foreach ($famF['children'] as $c) $netosDesteFilho[] = $c['nome'] ?? $c['id'];
                             }
                             if (!empty($famF['f_chil'])) {
                                 $ids = preg_split('/[;,\s]+/', trim($famF['f_chil']), -1, PREG_SPLIT_NO_EMPTY);
@@ -154,13 +140,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
             }
         }
 
-        // Prioridade no BD só se a resposta for útil para o tipo de pergunta
-        if ($perguntaFilhos && $totalFilhosEncontrados === 0) {
-            $achouNoBanco = false;
-        }
-        if ($perguntaNetos && $totalNetosEncontrados === 0) {
-            $achouNoBanco = false; // permite livros se não houver netos no GEDCOM
-        }
+        if ($perguntaFilhos && $totalFilhosEncontrados === 0) $achouNoBanco = false;
+        if ($perguntaNetos && $totalNetosEncontrados === 0) $achouNoBanco = false;
 
         if ($achouNoBanco) {
             if ($perguntaParentesco) {
@@ -192,8 +173,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     }
 
     // 2. Fatos-chave + trechos dos livros
-    // Em pergunta de parentesco COM filhos no banco: não diluir com livros
-    // Se o banco não listou filhos: permite fatos/livros
     $livros = new LivrosFamiliares();
     $usarLivrosEFatos = !($perguntaParentesco && $achouNoBanco);
 
@@ -227,15 +206,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     $historico = $_SESSION["chat"] ?? [];
     $resposta = chamarGroq($mensagem, $contexto, $historico);
 
-    // Modo debug: acrescente ?debug=1 na URL para ver o contexto enviado
     if (isset($_GET["debug"])) {
         $resposta = "=== DEBUG – Contexto enviado à Groq ===\n\n" 
                   . (empty(trim($contexto)) ? "(vazio)" : $contexto)
                   . "\n\n=== Resposta da IA ===\n\n" . $resposta;
     }
 
+    // --- MELHORIA NO LOG: ID único e primeira linha da resposta ---
+    $linhasResposta = explode("\n", trim($resposta));
+    $primeira_linha = trim($linhasResposta[0] ?? 'Sem resposta');
+    if (strlen($primeira_linha) > 120) {
+        $primeira_linha = substr($primeira_linha, 0, 117) . '...';
+    }
+
+    $logPergunta = str_replace(["\r", "\n", "|"], " ", $mensagem);
+    $logResposta = str_replace(["\r", "\n", "|"], " ", $primeira_linha);
+    
+    $logLine = date('Y-m-d H:i:s') . " | ID: $turn_id | Pergunta: $logPergunta | Resposta (1ª linha): $logResposta | Feedback: pendente\n";
+    if (@file_put_contents(__DIR__ . '/perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX) === false) {
+        @file_put_contents('/tmp/furtades_perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX);
+    }
+
     if (!isset($_SESSION["chat"])) $_SESSION["chat"] = [];
-    $_SESSION["chat"][] = ["user" => $mensagem, "ia" => $resposta];
+    $_SESSION["chat"][] = [
+        "user" => $mensagem, 
+        "ia" => $resposta,
+        "turn_id" => $turn_id,
+        "feedback" => null
+    ];
 }
 ?>
 
@@ -299,7 +297,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
             border-radius: 8px;
             -webkit-overflow-scrolling: touch;
         }
-        .mensagem { margin: 10px 0; display: flex; }
+        .mensagem { margin: 10px 0; display: flex; flex-direction: column; }
         .bubble-user {
             background: #e0e0e0;
             padding: 10px 14px;
@@ -332,7 +330,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
             padding: 12px 14px;
             border-radius: 24px;
             border: 1px solid #ccc;
-            font-size: 16px; /* evita zoom no iOS */
+            font-size: 16px;
             min-width: 0;
         }
         .chat-input button {
@@ -387,6 +385,69 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
         }
         .intro { font-size: 1.15em; margin-bottom: 20px; line-height: 1.4; }
 
+/* --- BOTÕES DE AÇÃO (estilo ghost/monocromático) --- */
+.feedback-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    opacity: 0.55;
+    transition: opacity 0.2s;
+}
+.mensagem:hover .feedback-actions {
+    opacity: 1;
+}
+.feedback-btn {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    transition: all 0.15s ease;
+}
+.feedback-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    display: block;
+}
+.feedback-btn:hover {
+    background-color: #f0f0f0;
+    color: #111;
+}
+.feedback-btn.active {
+    color: #0f5132;
+    background-color: #e6f4ea;
+}
+.feedback-btn.active-down {
+    color: #842029;
+    background-color: #f8d7da;
+}
+.feedback-btn.btn-copy.copiado {
+    color: #0f5132;
+    background-color: #e6f4ea;
+}
+.feedback-btn .btn-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    margin-left: 4px;
+}
+.feedback-status {
+    font-size: 0.8rem;
+    color: #0f5132;
+    font-style: italic;
+    margin-left: 6px;
+}
+
         /* ========== MOBILE ========== */
         @media (max-width: 700px) {
             body { flex-direction: column; }
@@ -408,10 +469,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
             }
             .chat-area { width: 100%; }
             .chat-wrapper { max-width: 100%; border-radius: 0; }
-            .chat-history {
-                border-radius: 0;
-                padding: 12px;
-            }
+            .chat-history { border-radius: 0; padding: 12px; }
             .bubble-user, .bubble-ia { max-width: 90%; font-size: 0.95em; }
             .chat-input {
                 padding: 8px 10px;
@@ -422,25 +480,155 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
             .search-box input { width: 100%; }
             .intro { font-size: 1.05em; padding: 0 8px; }
         }
-
         @media (max-width: 400px) {
-            .clear-btn { display: none; } /* esconde "Limpar" em telas muito pequenas */
+            .clear-btn { display: none; }
             .logo h1 { font-size: 1.2em; }
         }
+/* --- MODAL DE LIVROS --- */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+.modal-overlay.ativo {
+    display: flex;
+}
+.modal-content {
+    background: #fff;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    overflow: hidden;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: #4285F4;
+    color: #fff;
+}
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.2em;
+}
+.modal-close {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 1.8em;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+}
+.modal-close:hover { opacity: 0.7; }
+.modal-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+}
+.sem-livros {
+    color: #666;
+    text-align: center;
+    padding: 20px 0;
+}
+.lista-livros {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.lista-livros li {
+    border-bottom: 1px solid #eee;
+}
+.lista-livros li:last-child { border-bottom: none; }
+.lista-livros a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 8px;
+    text-decoration: none;
+    color: #333;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+.lista-livros a:hover {
+    background: #f0f6ff;
+}
+.icone-pdf { font-size: 1.5em; flex-shrink: 0; }
+.nome-livro {
+    flex: 1;
+    font-weight: 500;
+}
+.acao-livro {
+    color: #4285F4;
+    font-size: 0.85em;
+    font-weight: 600;
+    flex-shrink: 0;
+}
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <div class="logo">
-            <h1>
-                <span class="m">F</span><span class="o2">u</span><span class="g">r</span>
-                <span class="o">t</span><span class="o2">a</span><span class="g2">d</span>
-                <span class="l">ê</span><span class="g">s</span>
-            </h1>
-        </div>
-        <a href="?novo=1">➕ Novo Chat</a>
+<div class="sidebar">
+    <div class="logo">
+        <h1>
+            <span class="m">F</span><span class="o2">u</span><span class="g">r</span>
+            <span class="o">t</span><span class="o2">a</span><span class="g2">d</span>
+            <span class="l">ê</span><span class="g">s</span>
+        </h1>
     </div>
+    <a href="?novo=1">➕ Nova Conversa</a>
+    <a href="#" onclick="abrirModalLivros(); return false;">📚 Livros</a>
+</div>
 
+<!-- Modal de Livros -->
+<div id="modal-livros" class="modal-overlay" onclick="fecharModalLivros(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>📚 Livros do Clã Furtado</h2>
+            <button type="button" class="modal-close" onclick="fecharModalLivros()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <?php
+            $pdfDir = __DIR__ . '/pdf';
+            $pdfs = [];
+            if (is_dir($pdfDir)) {
+                foreach (scandir($pdfDir) as $arq) {
+                    if (preg_match('/\.pdf$/i', $arq)) {
+                        $pdfs[] = $arq;
+                    }
+                }
+                sort($pdfs, SORT_NATURAL | SORT_FLAG_CASE);
+            }
+            if (empty($pdfs)): ?>
+                <p class="sem-livros">Nenhum livro disponível no momento.</p>
+            <?php else: ?>
+                <ul class="lista-livros">
+                    <?php foreach ($pdfs as $pdf): 
+                        $nomeLimpo = preg_replace('/\.pdf$/i', '', $pdf);
+                        $nomeLimpo = str_replace(['_', '-'], ' ', $nomeLimpo);
+                        $nomeLimpo = ucwords($nomeLimpo);
+                    ?>
+                        <li>
+                            <a href="pdf/<?= htmlspecialchars($pdf) ?>" target="_blank" rel="noopener">
+                                <span class="icone-pdf">📄</span>
+                                <span class="nome-livro"><?= htmlspecialchars($nomeLimpo) ?></span>
+                                <span class="acao-livro">Abrir ↗</span>
+                            </a>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
     <div class="chat-area">
         <div class="chat-wrapper">
         <?php if (empty($_SESSION["chat"])): ?>
@@ -458,7 +646,44 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
             <div class="chat-history" id="chat-history">
                 <?php foreach ($_SESSION["chat"] as $linha): ?>
                     <div class="mensagem"><div class="bubble-user"><?= htmlspecialchars($linha["user"]) ?></div></div>
-                    <div class="mensagem"><div class="bubble-ia"><?= nl2br(htmlspecialchars($linha["ia"])) ?></div></div>
+                    <div class="mensagem">
+                        <div class="bubble-ia"><?= nl2br(htmlspecialchars($linha["ia"])) ?></div>
+                        
+<!-- Botões de Ação -->
+<div class="feedback-actions" data-turn-id="<?= htmlspecialchars($linha["turn_id"]) ?>">
+    <button type="button" class="feedback-btn btn-copy" 
+            onclick='copiarResposta(this, <?= json_encode($linha['ia'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' 
+            title="Copiar resposta">
+        <svg viewBox="0 0 24 24" class="icon-default">
+            <rect x="9" y="9" width="13" height="13" rx="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+        <svg viewBox="0 0 24 24" class="icon-check" style="display:none">
+            <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span class="btn-label">Copiar</span>
+    </button>
+
+    <button type="button" class="feedback-btn <?= ($linha["feedback"] === 'up') ? 'active' : '' ?>" 
+            onclick="sendFeedback('<?= htmlspecialchars($linha["turn_id"]) ?>', 'up')" title="Resposta útil">
+        <svg viewBox="0 0 24 24">
+            <path d="M7 10v12"/>
+            <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H7a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L15 2a3.13 3.13 0 0 1 3 3.88Z"/>
+        </svg>
+    </button>
+
+    <button type="button" class="feedback-btn <?= ($linha["feedback"] === 'down') ? 'active-down' : '' ?>" 
+            onclick="sendFeedback('<?= htmlspecialchars($linha["turn_id"]) ?>', 'down')" title="Resposta não útil">
+        <svg viewBox="0 0 24 24">
+            <path d="M17 14V2"/>
+            <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H17a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L9 22a3.13 3.13 0 0 1-3-3.88Z"/>
+        </svg>
+    </button>
+
+    <span class="feedback-status"><?= $linha["feedback"] ? 'Obrigado pelo feedback!' : '' ?></span>
+</div>
+
+ </div>
                 <?php endforeach; ?>
             </div>
             <div class="chat-input">
@@ -475,6 +700,79 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     <script>
         const chatHistory = document.getElementById('chat-history');
         if (chatHistory) chatHistory.scrollTop = chatHistory.scrollHeight;
+
+        function sendFeedback(turnId, feedback) {
+            const formData = new FormData();
+            formData.append('turn_id', turnId);
+            formData.append('feedback', feedback);
+
+            fetch('feedback.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const container = document.querySelector(`.feedback-actions[data-turn-id="${turnId}"]`);
+                    if (container) {
+                        const btns = container.querySelectorAll('.feedback-btn');
+                        btns.forEach(btn => btn.classList.remove('active'));
+                        
+                        const activeBtn = container.querySelector(`.feedback-btn[onclick*="'${feedback}'"]`);
+                        if (activeBtn) activeBtn.classList.add('active');
+                        
+                        const status = container.querySelector('.feedback-status');
+                        if (status) status.textContent = 'Obrigado pelo feedback!';
+                    }
+                }
+            })
+            .catch(err => console.error('Erro ao enviar feedback:', err));
+        }
+        function abrirModalLivros() {
+           document.getElementById('modal-livros').classList.add('ativo');
+        }
+        function fecharModalLivros(event) {
+           // Se foi chamado pelo clique no overlay (evento existe), só fecha se clicar fora
+           if (!event || event.target.id === 'modal-livros') {
+               document.getElementById('modal-livros').classList.remove('ativo');
+        }
+     }
+     // Fecha o modal com a tecla ESC
+     document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') fecharModalLivros();
+     });
+
+
+function sendFeedback(turnId, feedback) {
+    const formData = new FormData();
+    formData.append('turn_id', turnId);
+    formData.append('feedback', feedback);
+
+    fetch('feedback.php', { method: 'POST', body: formData })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            const container = document.querySelector(`.feedback-actions[data-turn-id="${turnId}"]`);
+            if (!container) return;
+            
+            // Remove estados anteriores
+            container.querySelectorAll('.feedback-btn').forEach(btn => {
+                btn.classList.remove('active', 'active-down');
+            });
+            
+            // Aplica novo estado
+            const btn = container.querySelector(`.feedback-btn[onclick*="'${feedback}'"]`);
+            if (btn) {
+                btn.classList.add(feedback === 'up' ? 'active' : 'active-down');
+            }
+            
+            const status = container.querySelector('.feedback-status');
+            if (status) status.textContent = 'Obrigado pelo feedback!';
+        }
+    })
+    .catch(err => console.error('Erro ao enviar feedback:', err));
+}
+
     </script>
 </body>
 </html>
