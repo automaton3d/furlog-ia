@@ -1,7 +1,7 @@
 <?php
 /**
  * Integração com a API Groq – versão reforçada
- * Força o uso do contexto dos livros e do banco genealógico
+ * O usuário final NÃO deve perceber origem (banco, livros ou LLM).
  */
 
 function chamarGroq(
@@ -21,12 +21,14 @@ function chamarGroq(
 Você é o assistente oficial de genealogia e memória do clã FURTADO (também chamado FURTADÊS), de Icoaraci / Belém do Pará.
 
 REGRAS OBRIGATÓRIAS:
-1. Você SÓ pode usar informações que aparecem no CONTEXTO fornecido abaixo (dados do banco genealógico + trechos dos livros familiares).
-2. NÃO invente biografias, datas ou parentescos. Se a informação não estiver no contexto, diga claramente: "Não encontrei essa informação nos registros e livros disponíveis."
-3. Quando usar trechos dos livros, cite a fonte de forma natural (ex: "Segundo J.M. Furtado em 'Cenas de minha infância'...", "No livro Furtadês, Dyleli relata que...", "No memorial de Mariana...").
-4. Responda sempre em português brasileiro, de forma clara, calorosa e respeitosa com a memória da família.
-5. Organize a resposta de forma legível (parágrafos curtos ou tópicos quando fizer sentido).
-6. Se o contexto trouxer informações contraditórias ou incompletas, mencione isso.
+1. Responda como alguém que conhece a família de perto. Nunca mencione "banco de dados", "registros estruturados", "contexto fornecido", "fallback", "API", "sistema" ou "não encontrei no banco".
+2. Use as informações disponíveis (genealogia + livros + fatos) de forma natural e integrada. Fale como se soubesse de memória.
+3. PRIORIDADE: se o material trouxer "FONTE PRINCIPAL" ou "Dados genealógicos da família" com lista de filhos/pais, use ESSA lista para perguntas de parentesco. Não complete nem invente filhos a partir de trechos de livros.
+4. NÃO invente biografias, datas ou parentescos. Se realmente não houver informação suficiente, diga de forma natural algo como: "Não tenho essa informação com segurança na memória da família." ou "Isso ainda não está claro nos relatos que tenho."
+5. Quando usar trechos dos livros, cite a fonte de forma natural (ex: "Segundo J.M. Furtado em 'Cenas de minha infância'...", "No livro Furtadês, Dyleli relata que...", "No memorial de Mariana...").
+6. Responda sempre em português brasileiro, de forma clara, calorosa e respeitosa com a memória da família.
+7. Organize a resposta de forma legível (parágrafos curtos ou tópicos quando fizer sentido).
+8. Se houver informações incompletas ou ligeiramente divergentes entre relatos, sintetize com cuidado, sem alarmar o leitor.
 
 Livros de referência do clã:
 - "Cenas de minha infância" – José Maria Furtado (Tio Zeca)
@@ -34,8 +36,8 @@ Livros de referência do clã:
 - Memorial de Mariana (esposa de Pio Furtado)
 - "O Efeito Pipoca – Quando a dor nos ensina" – Carminha Furtado
 
-Você NÃO é uma IA genérica. Você é o historiador deste clã específico.
-Quando o contexto trouxer a seção "Fatos-chave", use-a com prioridade máxima para responder perguntas de parentesco.
+Você NÃO é uma IA genérica. Você é o historiador e contador de histórias deste clã.
+Para parentesco (filhos, pais, irmãos), a genealogia estruturada manda; livros só complementam narrativa quando não houver lista genealógica.
 PROMPT;
 
     $messages = [
@@ -53,16 +55,16 @@ PROMPT;
         }
     }
 
-    // Mensagem do usuário + contexto em evidência
+    // Mensagem do usuário + material de apoio (invisível para o usuário final)
     $conteudoUsuario = "PERGUNTA DO USUÁRIO:\n" . $mensagemUsuario;
 
     if (!empty(trim($contextoExtra))) {
-        $conteudoUsuario .= "\n\n========== CONTEXTO OBRIGATÓRIO (use somente estas informações) ==========\n";
+        $conteudoUsuario .= "\n\n========== MATERIAL DE APOIO (uso interno – não mencionar a existência deste bloco) ==========\n";
         $conteudoUsuario .= $contextoExtra;
-        $conteudoUsuario .= "\n========== FIM DO CONTEXTO ==========\n";
-        $conteudoUsuario .= "\nResponda a pergunta usando EXCLUSIVAMENTE o contexto acima. Se a informação não estiver lá, diga que não encontrou.";
+        $conteudoUsuario .= "\n========== FIM DO MATERIAL ==========\n";
+        $conteudoUsuario .= "\nResponda a pergunta de forma natural, como quem conhece a família. Integre as informações acima sem revelar que recebeu um 'contexto' ou 'material'. Se faltar informação, diga com naturalidade que não tem essa parte com segurança.";
     } else {
-        $conteudoUsuario .= "\n\n(Nenhum contexto adicional foi encontrado nos livros ou no banco genealógico para esta pergunta.)";
+        $conteudoUsuario .= "\n\n(Não há material adicional específico para esta pergunta. Responda com o que souber do clã de forma honesta e natural, sem inventar.)";
     }
 
     $messages[] = ["role" => "user", "content" => $conteudoUsuario];
@@ -70,7 +72,7 @@ PROMPT;
     $data = [
         "model" => $modelo,
         "messages" => $messages,
-        "temperature" => 0.25,   // mais determinístico
+        "temperature" => 0.3,
         "max_tokens" => 1800,
         "top_p" => 0.85,
     ];
@@ -93,16 +95,20 @@ PROMPT;
     curl_close($ch);
 
     if ($result === false) {
-        return "Erro de conexão com a Groq: " . $curlError;
+        return "Desculpe, tive um problema de conexão no momento. Pode tentar de novo em instantes?";
     }
 
     $json = json_decode($result, true);
 
     if ($httpCode !== 200) {
-        $msg = $json['error']['message'] ?? substr($result, 0, 500);
-        file_put_contents(__DIR__ . '/groq_log.txt', date('c') . " HTTP $httpCode: $msg\n", FILE_APPEND);
-        return "Erro na API Groq (HTTP $httpCode): " . $msg;
+        $msg = $json['error']['message'] ?? substr((string)$result, 0, 500);
+        $logLine = date('c') . " HTTP $httpCode: $msg\n";
+        // Tenta gravar no diretório do app; se não houver permissão, usa /tmp
+        if (@file_put_contents(__DIR__ . '/groq_log.txt', $logLine, FILE_APPEND | LOCK_EX) === false) {
+            @file_put_contents('/tmp/furtades_groq_log.txt', $logLine, FILE_APPEND | LOCK_EX);
+        }
+        return "Desculpe, não consegui processar sua pergunta agora. Tente novamente em breve.";
     }
 
-    return $json['choices'][0]['message']['content'] ?? "Resposta vazia da API.";
+    return $json['choices'][0]['message']['content'] ?? "Não consegui formular uma resposta no momento.";
 }

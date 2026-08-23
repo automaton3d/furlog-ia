@@ -1,0 +1,29 @@
+# Credenciais e ambiente
+db.php
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+*_log.txt
+perguntas_log.txt
+search_log.txt
+groq_log.txt
+
+# Cache / temporários
+*.cache
+tmp/
+temp/
+
+# Sistema / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Dependências (se houver no futuro)
+vendor/
+node_modules/

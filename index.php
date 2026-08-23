@@ -14,90 +14,213 @@ if (isset($_GET["limpar"])) $_SESSION["chat"] = [];
 
 if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
     $mensagem = trim($_POST["mensagem"]);
-    $intencao = detectarIntencao($mensagem);
-    $contexto = "";
 
-    // 1. Busca no banco genealógico (quando a intenção for genealógica)
-    if ($intencao === "genealogia") {
+    // Log apenas das perguntas do usuário (uma linha por pergunta)
+    $logLine = date('Y-m-d H:i:s') . " | " . str_replace(["\r", "\n"], " ", $mensagem) . "\n";
+    if (@file_put_contents(__DIR__ . '/perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX) === false) {
+        @file_put_contents('/tmp/furtades_perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX);
+    }
+
+    $intencao = detectarIntencao($mensagem);
+    $perguntaParentesco = function_exists('ehPerguntaParentescoEstruturada')
+        ? ehPerguntaParentescoEstruturada($mensagem)
+        : false;
+    $contexto = "";
+    $achouNoBanco = false;
+
+    // 1. Busca no banco genealógico (genealogia OU pergunta estruturada de parentesco)
+    if ($intencao === "genealogia" || $perguntaParentesco) {
         $service = new SearchServiceDB($conn);
 
-        // Extrai possíveis nomes da pergunta (não usa a frase inteira)
+        // Extrai possíveis nomes da pergunta (prioriza "filhos de X" → X completo)
         $nomesParaBuscar = extrairNomesParaBusca($mensagem);
 
-        $achouAlgo = false;
         $arvoreGeral = [];
+        $idsJaIncluidos = [];
+        $totalFilhosEncontrados = 0;
+        $totalNetosEncontrados = 0;
+        $msgNorm = function_exists('normalizarTexto') ? normalizarTexto($mensagem) : strtolower($mensagem);
+        $perguntaFilhos = $perguntaParentesco && preg_match('/\bfilhos?\b/u', $msgNorm);
+        $perguntaNetos  = $perguntaParentesco && preg_match('/\b(netos?|netas?|bisnetos?|descendentes?)\b/u', $msgNorm);
 
         foreach ($nomesParaBuscar as $nomeBusca) {
-            $result = $service->search($nomeBusca, "indi", 5);
+            $result = $service->search($nomeBusca, "indi", 8);
             if (!$result || $result['count'] === 0) continue;
 
-            $achouAlgo = true;
-            // Pega até os 2 melhores resultados para este nome
-            foreach (array_slice($result['results'], 0, 2) as $hit) {
+            $limiteHits = $perguntaParentesco ? 5 : 2;
+            foreach (array_slice($result['results'], 0, $limiteHits) as $hit) {
                 $pid = $hit["id"];
+                if (isset($idsJaIncluidos[$pid])) continue;
+                if ($perguntaParentesco && isset($hit['score']) && (float)$hit['score'] < 0.45) {
+                    continue;
+                }
+                $idsJaIncluidos[$pid] = true;
+
                 $indi = $service->getIndividual($pid);
                 if (!$indi) continue;
 
-                $bloco = "Indivíduo: {$indi['nome']} (ID {$indi['id']})\n";
+                $bloco = "Indivíduo: {$indi['nome']}\n";
+                $filhosDesteIndi = 0;
+                $filhosIds = []; // id => nome
+
                 foreach ($indi['families'] as $fam) {
-                    $linha = "  Família {$fam['f_id']} | Pai: " . ($fam['husb_name'] ?? '?') . " | Mãe: " . ($fam['wife_name'] ?? '?');
+                    $linha = "  Família | Pai: " . ($fam['husb_name'] ?? '?') . " | Mãe: " . ($fam['wife_name'] ?? '?');
                     $filhosList = [];
                     if (!empty($fam['children'])) {
                         foreach ($fam['children'] as $c) {
-                            $filhosList[] = ($c['nome'] ?? $c['id']);
+                            $cid = $c['id'] ?? null;
+                            $cnome = $c['nome'] ?? $cid;
+                            $filhosList[] = $cnome;
+                            if ($cid) {
+                                $filhosIds[$cid] = $cnome;
+                            }
                         }
                     }
                     if (!empty($fam['f_chil'])) {
-                        $ids = explode(';', trim($fam['f_chil'], ';'));
+                        $ids = preg_split('/[;,\s]+/', trim($fam['f_chil']), -1, PREG_SPLIT_NO_EMPTY);
                         foreach ($ids as $cid) {
-                            if ($cid === '') continue;
+                            $cid = trim($cid);
+                            if ($cid === '' || !preg_match('/^I\d+/i', $cid)) continue;
                             $stmt = $conn->prepare("SELECT n_full FROM pgv_name WHERE n_id = ?");
                             $stmt->bind_param("s", $cid);
                             $stmt->execute();
                             $res = $stmt->get_result();
                             $row = $res->fetch_assoc();
-                            $filhosList[] = $row ? $row['n_full'] : $cid;
+                            $cnome = $row ? $row['n_full'] : $cid;
+                            $filhosList[] = $cnome;
+                            $filhosIds[$cid] = $cnome;
                         }
                     }
                     if ($filhosList) {
-                        // remove duplicatas preservando ordem
                         $filhosList = array_values(array_unique($filhosList));
+                        $filhosDesteIndi += count($filhosList);
                         $linha .= "\n  Filhos (" . count($filhosList) . "): " . implode("; ", $filhosList);
                     }
                     $bloco .= $linha . "\n";
                 }
+
+                // Netos: uma geração abaixo dos filhos
+                if ($perguntaNetos && !empty($filhosIds)) {
+                    $netosLista = [];
+                    foreach ($filhosIds as $filhoId => $filhoNome) {
+                        $filhoIndi = $service->getIndividual($filhoId);
+                        if (!$filhoIndi) continue;
+                        $netosDesteFilho = [];
+                        foreach ($filhoIndi['families'] as $famF) {
+                            if (!empty($famF['children'])) {
+                                foreach ($famF['children'] as $c) {
+                                    $netosDesteFilho[] = $c['nome'] ?? $c['id'];
+                                }
+                            }
+                            if (!empty($famF['f_chil'])) {
+                                $ids = preg_split('/[;,\s]+/', trim($famF['f_chil']), -1, PREG_SPLIT_NO_EMPTY);
+                                foreach ($ids as $cid) {
+                                    $cid = trim($cid);
+                                    if ($cid === '' || !preg_match('/^I\d+/i', $cid)) continue;
+                                    $stmt = $conn->prepare("SELECT n_full FROM pgv_name WHERE n_id = ?");
+                                    $stmt->bind_param("s", $cid);
+                                    $stmt->execute();
+                                    $res = $stmt->get_result();
+                                    $row = $res->fetch_assoc();
+                                    $netosDesteFilho[] = $row ? $row['n_full'] : $cid;
+                                }
+                            }
+                        }
+                        $netosDesteFilho = array_values(array_unique(array_filter($netosDesteFilho)));
+                        if ($netosDesteFilho) {
+                            $totalNetosEncontrados += count($netosDesteFilho);
+                            $netosLista[] = "  Netos via {$filhoNome} (" . count($netosDesteFilho) . "): " . implode("; ", $netosDesteFilho);
+                        } else {
+                            $netosLista[] = "  Netos via {$filhoNome}: (nenhum cadastrado)";
+                        }
+                    }
+                    if ($netosLista) {
+                        $bloco .= "  --- Netos de {$indi['nome']} ---\n" . implode("\n", $netosLista) . "\n";
+                    }
+                }
+
+                if ($perguntaFilhos && $filhosDesteIndi === 0) {
+                    $arvoreGeral[] = $bloco . "  (sem filhos cadastrados neste registro)\n";
+                    continue;
+                }
+                if ($perguntaNetos && $totalNetosEncontrados === 0 && $filhosDesteIndi === 0) {
+                    $arvoreGeral[] = $bloco . "  (sem netos cadastrados neste registro)\n";
+                    continue;
+                }
+
+                $totalFilhosEncontrados += $filhosDesteIndi;
+                $achouNoBanco = true;
                 $arvoreGeral[] = $bloco;
             }
         }
 
-        if ($achouAlgo) {
-            $contexto .= "Dados genealógicos do banco:\n" . implode("\n", $arvoreGeral) . "\n";
-        } else {
-            $contexto .= "Não encontrei registros genealógicos estruturados no banco para os nomes identificados.\n\n";
+        // Prioridade no BD só se a resposta for útil para o tipo de pergunta
+        if ($perguntaFilhos && $totalFilhosEncontrados === 0) {
+            $achouNoBanco = false;
+        }
+        if ($perguntaNetos && $totalNetosEncontrados === 0) {
+            $achouNoBanco = false; // permite livros se não houver netos no GEDCOM
+        }
+
+        if ($achouNoBanco) {
+            if ($perguntaParentesco) {
+                $contexto .= "=== FONTE PRINCIPAL (use esta para responder parentesco/filhos/netos/pais) ===\n";
+                $contexto .= "Dados genealógicos da família:\n" . implode("\n", $arvoreGeral) . "\n";
+                $contexto .= "=== FIM DA FONTE PRINCIPAL ===\n";
+                if ($perguntaNetos) {
+                    $contexto .= "Instrução: liste os NETOS (filhos dos filhos). Não confunda netos com filhos.\n\n";
+                } else {
+                    $contexto .= "Instrução: para listar filhos, pais ou parentesco, use EXCLUSIVAMENTE os dados acima. Não invente nomes a partir de livros.\n\n";
+                }
+            } else {
+                $contexto .= "Dados genealógicos da família:\n" . implode("\n", $arvoreGeral) . "\n";
+            }
+        } elseif (!empty($arvoreGeral)) {
+            $contexto .= "Dados genealógicos parciais:\n" . implode("\n", $arvoreGeral) . "\n";
+        }
+
+        if (!$achouNoBanco && !empty($nomesParaBuscar)) {
+            $logLine = date('c') . " | parentesco=" . ($perguntaParentesco ? '1' : '0')
+                . " | filhos_bd=" . $totalFilhosEncontrados
+                . " | netos_bd=" . $totalNetosEncontrados
+                . " | nomes=" . implode(',', $nomesParaBuscar)
+                . " | msg=" . substr($mensagem, 0, 120) . "\n";
+            if (@file_put_contents(__DIR__ . '/search_log.txt', $logLine, FILE_APPEND | LOCK_EX) === false) {
+                @file_put_contents('/tmp/furtades_search_log.txt', $logLine, FILE_APPEND | LOCK_EX);
+            }
         }
     }
 
     // 2. Fatos-chave + trechos dos livros
+    // Em pergunta de parentesco COM filhos no banco: não diluir com livros
+    // Se o banco não listou filhos: permite fatos/livros
     $livros = new LivrosFamiliares();
-    $fatosPath = __DIR__ . "/knowledge/fatos_chave.md";
-    if (file_exists($fatosPath)) {
-        $fatos = file_get_contents($fatosPath);
-        // Só inclui se a pergunta mencionar nomes da família
-        $msgLower = strtolower($mensagem);
-        $nomesChave = ["mariana", "pio", "zeca", "furtado", "carminha", "dyleli", "j.m", "tio zeca"];
-        foreach ($nomesChave as $n) {
-            if (strpos($msgLower, $n) !== false) {
-                $contexto .= "Fatos-chave da família (use como base):
-" . $fatos . "
+    $usarLivrosEFatos = !($perguntaParentesco && $achouNoBanco);
 
-";
-                break;
+    if ($usarLivrosEFatos) {
+        $fatosPath = __DIR__ . "/knowledge/fatos_chave.md";
+        if (file_exists($fatosPath)) {
+            $fatos = file_get_contents($fatosPath);
+            $incluirFatos = ($intencao === "genealogia" || $perguntaParentesco);
+            if (!$incluirFatos) {
+                $msgNorm = function_exists('normalizarTexto') ? normalizarTexto($mensagem) : strtolower($mensagem);
+                $nomesChave = ["mariana", "pio", "zeca", "furtado", "carminha", "dyleli", "j.m", "tio zeca", "xandico", "filica", "joao lima", "joão lima"];
+                foreach ($nomesChave as $n) {
+                    $nNorm = function_exists('normalizarTexto') ? normalizarTexto($n) : strtolower($n);
+                    if (strpos($msgNorm, $nNorm) !== false) {
+                        $incluirFatos = true;
+                        break;
+                    }
+                }
+            }
+            if ($incluirFatos) {
+                $contexto .= "Fatos-chave da família (prioridade alta):\n" . $fatos . "\n\n";
             }
         }
-    }
-    $trechos = $livros->buscarTrechos($mensagem, 4);
-    if (!empty($trechos)) {
-        $contexto .= $trechos;
+        $trechos = $livros->buscarTrechos($mensagem, 4);
+        if (!empty($trechos)) {
+            $contexto .= $trechos;
+        }
     }
 
     // 3. Chama a Groq com histórico + contexto enriquecido
