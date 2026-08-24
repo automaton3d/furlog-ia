@@ -61,7 +61,6 @@ class SearchServiceDB
         $resultsById = [];
 
         // 1) Tokens AND: todos devem aparecer no nome
-        //    "Alexandre Furtado Neto" casa com 'Alexandre "Neto" Furtado Neto'
         if (count($parts) >= 2) {
             $sql = "SELECT i.i_id AS id, n.n_full AS nome FROM pgv_name n
                     JOIN pgv_individuals i ON n.n_id = i.i_id WHERE 1=1";
@@ -245,7 +244,6 @@ class SearchServiceDB
             foreach ($ids as $cid) {
                 $cid = trim($cid);
                 if ($cid === '' || isset($byId[$cid])) continue;
-                // ignora IDs que não parecem indivíduos (ex.: F2)
                 if (!preg_match('/^I\d+/i', $cid)) continue;
                 $byId[$cid] = [
                     'id' => $cid,
@@ -287,7 +285,6 @@ class SearchServiceDB
         $t = $norm($text);
 
         if ($t !== '' && $q !== '' && str_contains($t, $q)) {
-            // Bônus se o nome começa com a query
             if (str_starts_with($t, $q)) {
                 return 1.0;
             }
@@ -307,5 +304,116 @@ class SearchServiceDB
         }
         return $matches / count($qWords);
     }
+} // <--- FIM DA CLASSE SearchServiceDB
+
+/**
+ * Busca informações de superlativos (mais velho, mais novo, maior longevidade)
+ * FUNÇÃO GLOBAL (fora da classe)
+ */
+function buscarSuperlativos(mysqli $conn, string $mensagem): array {
+    $msgNorm = function_exists('normalizarTexto') ? normalizarTexto($mensagem) : strtolower($mensagem);
+
+
+    $tipo = null;
+    if (preg_match('/\b(mais velho vivo|vivo mais velho|pessoa viva mais velha|ancião vivo)\b/iu', $msgNorm)) {
+        $tipo = 'mais_velho_vivo';
+    } elseif (preg_match('/\b(mais velho|mais velha|mais antigo|mais antiga|primeiro a nascer|nasceu primeiro)\b/iu', $msgNorm)) {
+        $tipo = 'mais_velho';
+    } elseif (preg_match('/\b(mais novo|mais nova|mais jovem|mais recente|último a nascer|nasceu por último)\b/iu', $msgNorm)) {
+        $tipo = 'mais_novo';
+    } elseif (preg_match('/\b(maior idade|viveu mais|longevidade|mais tempo|mais longevo)\b/iu', $msgNorm)) {
+        $tipo = 'maior_longevidade';
+    }
+    if (!$tipo) return [];
+
+    $resultados = [];
+
+    if ($tipo === 'mais_velho_vivo') {
+        // Busca pessoas com nascimento, SEM registro de óbito (DEAT), ordenadas pela mais velha
+        // Usamos 1900 como limite inferior para evitar retornar pessoas do século 19 que só faltam o registro de óbito no GEDCOM
+        $sql = "SELECT 
+                    b.d_gid AS id_individuo,
+                    n.n_full AS nome,
+                    CONCAT_WS(' ', NULLIF(b.d_day, 0), b.d_month, b.d_year) AS data_nascimento,
+                    b.d_year AS ano
+                FROM pgv_dates b
+                INNER JOIN pgv_name n ON n.n_id = b.d_gid
+                WHERE b.d_fact = 'BIRT'
+                  AND b.d_year IS NOT NULL
+                  AND b.d_year BETWEEN 1900 AND YEAR(CURDATE())
+                  AND n.n_type = 'NAME'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pgv_dates d 
+                      WHERE d.d_gid = b.d_gid AND d.d_fact = 'DEAT'
+                  )
+                ORDER BY b.d_year ASC
+                LIMIT 5";
+    } elseif ($tipo === 'mais_velho') {
+        $sql = "SELECT 
+                    d.d_gid AS id_individuo,
+                    n.n_full AS nome,
+                    CONCAT_WS(' ', NULLIF(d.d_day, 0), d.d_month, d.d_year) AS data_nascimento,
+                    d.d_year AS ano
+                FROM pgv_dates d
+                INNER JOIN pgv_name n ON n.n_id = d.d_gid
+                WHERE d.d_fact = 'BIRT'
+                  AND d.d_year IS NOT NULL
+                  AND d.d_year BETWEEN 1800 AND YEAR(CURDATE())
+                  AND n.n_type = 'NAME'
+                ORDER BY d.d_year ASC
+                LIMIT 5";
+    } elseif ($tipo === 'mais_novo') {
+        $sql = "SELECT 
+                    d.d_gid AS id_individuo,
+                    n.n_full AS nome,
+                    CONCAT_WS(' ', NULLIF(d.d_day, 0), d.d_month, d.d_year) AS data_nascimento,
+                    d.d_year AS ano
+                FROM pgv_dates d
+                INNER JOIN pgv_name n ON n.n_id = d.d_gid
+                WHERE d.d_fact = 'BIRT'
+                  AND d.d_year IS NOT NULL
+                  AND d.d_year BETWEEN 1800 AND YEAR(CURDATE())
+                  AND n.n_type = 'NAME'
+                ORDER BY d.d_year DESC
+                LIMIT 5";
+    } elseif ($tipo === 'maior_longevidade') {
+        $sql = "SELECT 
+                    n.n_full AS nome,
+                    CONCAT_WS(' ', NULLIF(b.d_day, 0), b.d_month, b.d_year) AS nascimento,
+                    CONCAT_WS(' ', NULLIF(de.d_day, 0), de.d_month, de.d_year) AS falecimento,
+                    b.d_year AS ano_nasc,
+                    de.d_year AS ano_falec,
+                    (de.d_year - b.d_year) AS idade_aprox
+                FROM pgv_dates b
+                INNER JOIN pgv_dates de ON de.d_gid = b.d_gid AND de.d_fact = 'DEAT'
+                INNER JOIN pgv_name n ON n.n_id = b.d_gid
+                WHERE b.d_fact = 'BIRT'
+                  AND b.d_year IS NOT NULL
+                  AND de.d_year IS NOT NULL
+                  AND (de.d_year - b.d_year) > 0
+                  AND n.n_type = 'NAME'
+                ORDER BY idade_aprox DESC
+                LIMIT 5";
+    }
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        error_log("Erro ao preparar query de superlativos: " . $conn->error);
+        return [];
+    }
+
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $resultados[] = $row;
+    }
+
+    $stmt->close();
+
+    return [
+        'tipo' => $tipo,
+        'dados' => $resultados
+    ];
 }
 ?>
