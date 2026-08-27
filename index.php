@@ -8,6 +8,29 @@ require_once 'consultas.php';
 require_once 'intencao.php';
 require_once 'ia.php';
 require_once 'livros.php';
+require_once 'auth.php'; // NOVO: Sistema de login
+
+// Registra atividade do usuário (para rastreamento de online)
+registrarAtividade();
+
+// Processa logout
+if (isset($_GET["sair"])) {
+    fazerLogout();
+    header("Location: index.php");
+    exit;
+}
+
+// Processa login
+$erroLogin = null;
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login_username'], $_POST['login_password'])) {
+    if (autenticarUsuario($_POST['login_username'], $_POST['login_password'], $usuariosAutorizados)) {
+        fazerLogin($_POST['login_username']);
+        header("Location: index.php");
+        exit;
+    } else {
+        $erroLogin = "Usuário ou senha incorretos.";
+    }
+}
 
 if (isset($_GET["novo"])) unset($_SESSION["chat"]);
 if (isset($_GET["limpar"])) $_SESSION["chat"] = [];
@@ -250,11 +273,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !empty($_POST["mensagem"])) {
         $primeira_linha = substr($primeira_linha, 0, 117) . '...';
     }
 
-    $logPergunta = str_replace(["\r", "\n", "|"], " ", $mensagem);
-    $logResposta = str_replace(["\r", "\n", "|"], " ", $primeira_linha);
-    
-    $logLine = date('Y-m-d H:i:s') . " | ID: $turn_id | Pergunta: $logPergunta | Resposta (1ª linha): $logResposta | Feedback: pendente\n";
-    if (@file_put_contents(__DIR__ . '/perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX) === false) {
+$logPergunta = str_replace(["\r", "\n", "|"], " ", $mensagem);
+$logResposta = str_replace(["\r", "\n", "|"], " ", $primeira_linha);
+$usuarioLogado = $_SESSION['usuario_logado'] ?? 'anon';
+
+$logLine = date('Y-m-d H:i:s') 
+    . " | Usuário: $usuarioLogado"
+    . " | ID: $turn_id"
+    . " | Pergunta: $logPergunta"
+    . " | Resposta (1ª linha): $logResposta"
+    . " | Feedback: pendente\n";
+
+    if (@file_put_contents(__DIR__ . '/perguntas.log', $logLine, FILE_APPEND | LOCK_EX) === false) {
         @file_put_contents('/tmp/furtades_perguntas_log.txt', $logLine, FILE_APPEND | LOCK_EX);
     }
 

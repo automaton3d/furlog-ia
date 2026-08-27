@@ -16,8 +16,8 @@
             overflow: hidden;
         }
         .sidebar {
-            width: 200px;
-            min-width: 200px;
+            width: 215px;
+            min-width: 215px;
             background: #dcdcdc;
             padding: 20px;
             display: flex;
@@ -252,6 +252,255 @@
         .nome-livro { flex: 1; font-weight: 500; }
         .acao-livro { color: #4285F4; font-size: 0.85em; font-weight: 600; flex-shrink: 0; }
 
+/* --- WIDGET DE LOGIN (canto superior direito) --- */
+.auth-widget {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    z-index: 500;
+}
+.auth-btn {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    padding: 6px 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9em;
+    color: #333;
+    transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.auth-btn:hover {
+    background: #f5f5f5;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.auth-btn svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.auth-user {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    padding: 6px 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+    color: #333;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.auth-user .avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #4285F4;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.85em;
+    text-transform: uppercase;
+}
+.auth-user .logout-link {
+    color: #888;
+    text-decoration: none;
+    margin-left: 4px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    transition: all 0.2s;
+}
+.auth-user .logout-link:hover {
+    background: #fee;
+    color: #EA4335;
+}
+
+/* --- MODAL DE LOGIN --- */
+.login-modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+.login-modal.ativo { display: flex; }
+.login-box {
+    background: #fff;
+    border-radius: 12px;
+    width: 100%;
+    max-width: 360px;
+    padding: 28px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+.login-box h2 {
+    margin: 0 0 20px 0;
+    font-size: 1.3em;
+    color: #333;
+    text-align: center;
+}
+.login-box .form-group {
+    margin-bottom: 14px;
+}
+.login-box label {
+    display: block;
+    font-size: 0.85em;
+    color: #555;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+.login-box input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 1em;
+    box-sizing: border-box;
+}
+.login-box input:focus {
+    outline: none;
+    border-color: #4285F4;
+    box-shadow: 0 0 0 2px rgba(66,133,244,0.15);
+}
+.login-box button[type="submit"] {
+    width: 100%;
+    padding: 11px;
+    background: #4285F4;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.2s;
+}
+.login-box button[type="submit"]:hover {
+    background: #3367d6;
+}
+.login-error {
+    background: #f8d7da;
+    color: #842029;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    margin-bottom: 12px;
+    text-align: center;
+}
+.login-close {
+    position: absolute;
+    top: 10px;
+    right: 14px;
+    background: transparent;
+    border: none;
+    font-size: 1.5em;
+    cursor: pointer;
+    color: #888;
+}
+.login-close:hover { color: #333; }
+
+/* --- USUÁRIO NA SIDEBAR (estilo Qwen) --- */
+.sidebar-user {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid #c8c8c8;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.sidebar-user .avatar-big {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #4285F4;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+.sidebar-user .user-info {
+    flex: 1;
+    min-width: 0;
+}
+.sidebar-user .user-name {
+    font-weight: 600;
+    color: #333;
+    font-size: 0.95em;
+    text-transform: capitalize;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- USUÁRIOS ONLINE NA SIDEBAR --- */
+.sidebar-online {
+    margin-top: 16px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+.online-title {
+    font-size: 0.8em;
+    font-weight: 600;
+    color: #34A853;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.online-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.online-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 0.85em;
+}
+.online-item.online-eu {
+    background: #e8f0fe;
+    font-weight: 600;
+}
+.online-avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #4285F4;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+.online-name {
+    color: #333;
+    text-transform: capitalize;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
         /* ========== MOBILE ========== */
         @media (max-width: 700px) {
             body { flex-direction: column; }
@@ -291,6 +540,57 @@
     </style>
 </head>
 <body>
+    <?php $usuarioAtual = usuarioLogado(); ?>
+    
+    <!-- Widget de Login/Logout (canto superior direito) -->
+    <div class="auth-widget">
+        <?php if ($usuarioAtual): ?>
+            <div class="auth-user">
+                <span class="avatar"><?= htmlspecialchars(substr($usuarioAtual, 0, 1)) ?></span>
+                <span><?= htmlspecialchars(ucfirst($usuarioAtual)) ?></span>
+                <a href="?sair=1" class="logout-link" title="Sair">
+                    <svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:middle">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                </a>
+            </div>
+        <?php else: ?>
+            <button type="button" class="auth-btn" onclick="abrirLogin()">
+                <svg viewBox="0 0 24 24">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                    <polyline points="10 17 15 12 10 7"/>
+                    <line x1="15" y1="12" x2="3" y2="12"/>
+                </svg>
+                Entrar
+            </button>
+        <?php endif; ?>
+    </div>
+
+    <!-- Modal de Login -->
+    <div id="login-modal" class="login-modal" onclick="fecharLogin(event)">
+        <div class="login-box" onclick="event.stopPropagation()" style="position:relative">
+            <button type="button" class="login-close" onclick="fecharLogin()">&times;</button>
+            <h2>🔐 Acesso ao Furtadês</h2>
+            <?php if (!empty($erroLogin)): ?>
+                <div class="login-error"><?= htmlspecialchars($erroLogin) ?></div>
+            <?php endif; ?>
+            <form method="post">
+                <div class="form-group">
+                    <label for="login_username">Usuário</label>
+                    <input type="text" id="login_username" name="login_username" required autocomplete="username" autofocus />
+                </div>
+                <div class="form-group">
+                    <label for="login_password">Senha</label>
+                    <input type="password" id="login_password" name="login_password" required autocomplete="current-password" />
+                </div>
+                <button type="submit">Entrar</button>
+            </form>
+        </div>
+    </div>
+
+
     <div class="sidebar">
         <div class="logo">
             <h1>
@@ -301,7 +601,34 @@
         </div>
         <a href="?novo=1">➕ Nova Conversa</a>
         <a href="#" onclick="abrirModalLivros(); return false;">📚 Livros</a>
+        
+        <?php 
+        $onlineAgora = function_exists('usuariosOnline') ? usuariosOnline() : [];
+        if (!empty($onlineAgora)): 
+        ?>
+        <div class="sidebar-online">
+            <div class="online-title">🟢 Online agora (<?= count($onlineAgora) ?>)</div>
+            <div class="online-list">
+                <?php foreach ($onlineAgora as $user): 
+                    $eEu = ($user['username'] === $usuarioAtual);
+                ?>
+                    <div class="online-item <?= $eEu ? 'online-eu' : '' ?>">
+                        <span class="online-avatar"><?= htmlspecialchars(substr($user['username'], 0, 1)) ?></span>
+                        <span class="online-name"><?= htmlspecialchars(ucfirst($user['username'])) ?><?= $eEu ? ' (você)' : '' ?></span>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        
+<?php if ($usuarioAtual): ?>
+<div class="sidebar-user">
+    <div class="avatar-big"><?= htmlspecialchars(substr($usuarioAtual, 0, 1)) ?></div>
+    <div class="user-info">
+        <div class="user-name"><?= htmlspecialchars(ucfirst($usuarioAtual)) ?></div>
     </div>
+</div>
+<?php endif; ?>    </div>
 
     <!-- Modal de Livros -->
     <div id="modal-livros" class="modal-overlay" onclick="fecharModalLivros(event)">
@@ -521,6 +848,30 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') fecharModalLivros();
         });
+// ===== MODAL DE LOGIN =====
+function abrirLogin() {
+    document.getElementById('login-modal').classList.add('ativo');
+    setTimeout(() => {
+        const input = document.getElementById('login_username');
+        if (input) input.focus();
+    }, 100);
+}
+function fecharLogin(event) {
+    if (!event || event.target.id === 'login-modal') {
+        document.getElementById('login-modal').classList.remove('ativo');
+    }
+}
+// Fecha o modal de login com ESC (sem conflitar com o modal de livros)
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const loginModal = document.getElementById('login-modal');
+        if (loginModal && loginModal.classList.contains('ativo')) {
+            loginModal.classList.remove('ativo');
+        } else {
+            fecharModalLivros();
+        }
+    }
+});
     </script>
 </body>
 </html>
