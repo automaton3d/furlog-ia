@@ -599,8 +599,14 @@
                 <span class="l">ê</span><span class="g">s</span>
             </h1>
         </div>
-        <a href="?novo=1">➕ Nova Conversa</a>
-        <a href="#" onclick="abrirModalLivros(); return false;">📚 Livros</a>
+
+
+<a href="?novo=1">➕ Nova Conversa</a>
+<a href="#" onclick="abrirModalLivros(); return false;">📚 Livros</a>
+<?php if ($usuarioAtual): ?>
+<a href="admin.php">🔧 Admin</a>
+<a href="perguntas.php">📋 Log</a>
+<?php endif; ?>
         
         <?php 
         $onlineAgora = function_exists('usuariosOnline') ? usuariosOnline() : [];
